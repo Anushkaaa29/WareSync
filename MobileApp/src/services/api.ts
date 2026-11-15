@@ -3,7 +3,7 @@ import {store} from '../store/store';
 import {logout} from '../store/slices/authSlice';
 
 const API = axios.create({
-  baseURL: 'http://192.168.31.38:5000/api',
+  baseURL: 'https://smart-inventory-warehouse-management.onrender.com/api',
   headers: {
     'Content-Type': 'application/json',
   },
