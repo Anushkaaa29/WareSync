@@ -178,6 +178,8 @@ export const registerDeviceToken = async (req, res) => {
     }
 
     const cleanToken = token.trim();
+    console.log("FCM TOKEN RECEIVED:", cleanToken);
+    console.log("FCM TOKEN SAVED FOR USER:", userId);
 
     // Ensure the token is not duplicated across other users
     const allUsers = await db.orm.public.User.all();
