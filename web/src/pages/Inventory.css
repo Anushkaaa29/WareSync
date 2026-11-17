@@ -1,0 +1,353 @@
+/* Inventory Page Styles */
+
+.inventory-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.inv-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.inv-action-btn:hover {
+  filter: brightness(0.92);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.12);
+}
+
+.inv-action-btn:active {
+  transform: translateY(0);
+}
+
+.inv-btn-stock-in {
+  background-color: #4f46e5;
+}
+
+.inv-btn-stock-out {
+  background-color: #ef4444;
+}
+
+.inv-btn-transfer {
+  background-color: #3b82f6;
+}
+
+.inv-btn-adjust {
+  background-color: #f59e0b;
+}
+
+/* Modal Overlay */
+.inv-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.inv-modal-dialog {
+  background: #ffffff;
+  width: 100%;
+  max-width: 620px;
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  animation: invModalFadeIn 180ms ease-out;
+}
+
+@keyframes invModalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Modal Header by Tab */
+.inv-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.inv-modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inv-header-stock-in {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.inv-header-stock-out {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.inv-header-transfer {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.inv-header-adjust {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.inv-modal-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: currentColor;
+  transition: opacity 150ms ease;
+}
+
+.inv-modal-close-btn:hover {
+  opacity: 0.75;
+}
+
+/* Modal Scrollable Body */
+.inv-modal-body {
+  padding: 22px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Tabs Bar */
+.inv-modal-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.inv-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.inv-tab-btn:hover {
+  background: #f9fafb;
+}
+
+.inv-tab-btn.active-stock-in {
+  border: 2px solid #10b981;
+  color: #059669;
+  font-weight: 600;
+}
+
+.inv-tab-btn.active-stock-out {
+  border: 2px solid #ef4444;
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.inv-tab-btn.active-transfer {
+  border: 2px solid #3b82f6;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.inv-tab-btn.active-adjust {
+  border: 2px solid #b45309;
+  color: #b45309;
+  font-weight: 600;
+}
+
+/* Feedback Banners */
+.inv-alert-error {
+  background-color: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inv-alert-success {
+  background-color: #dcfce7;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Form Styles */
+.inv-form-group {
+  margin-bottom: 16px;
+}
+
+.inv-form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.inv-required {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.inv-form-control {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #111827;
+  background-color: #ffffff;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+  box-sizing: border-box;
+}
+
+.inv-form-control:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.inv-form-control::placeholder {
+  color: #9ca3af;
+}
+
+textarea.inv-form-control {
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Modal Footer Actions */
+.inv-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.inv-btn-cancel {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.inv-btn-cancel:hover {
+  background-color: #f9fafb;
+}
+
+.inv-btn-submit {
+  border: none;
+  color: #ffffff;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 150ms ease, opacity 150ms ease;
+}
+
+.inv-btn-submit:hover {
+  filter: brightness(0.92);
+}
+
+.inv-btn-submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.inv-btn-submit-green {
+  background-color: #10b981;
+}
+
+.inv-btn-submit-red {
+  background-color: #ef4444;
+}
+
+.inv-btn-submit-blue {
+  background-color: #3b82f6;
+}
+
+.inv-btn-submit-orange {
+  background-color: #f59e0b;
+}
+
+/* Table Link Styling */
+.inv-product-link {
+  color: #4f46e5;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.inv-product-link:hover {
+  text-decoration: underline;
+}
+
+.inv-warehouse-link {
+  color: #6366f1;
+  text-decoration: none;
+}
+
+.inv-warehouse-link:hover {
+  text-decoration: underline;
+}
