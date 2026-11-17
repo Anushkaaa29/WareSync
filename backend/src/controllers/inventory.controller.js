@@ -47,17 +47,6 @@ export const createInventory = async (req, res) => {
       rackId: rackId ? Number(rackId) : null,
       quantity: quantity ?? 0,
     });
-
-    try {
-      await notifyInventoryThreshold({
-        productId: Number(productId),
-        warehouseId: Number(warehouseId),
-        quantity: quantity ?? 0,
-      });
-    } catch (notifyErr) {
-      console.warn("Threshold notification error in createInventory:", notifyErr.message);
-    }
-
     res.status(201).json({
       message: "Inventory created successfully",
       inventory,
@@ -82,7 +71,7 @@ export const stockIn = async (req, res) => {
       });
     }
     
-    if (quantity <= 0) {
+    if (Number(quantity) <= 0) {
       return res.status(400).json({
         message: "Quantity must be greater than zero",
       });
@@ -126,17 +115,23 @@ export const stockIn = async (req, res) => {
     }
     
     // Execute transaction
-    let finalInventoryQuantity = quantity;
+    let finalInventoryQuantity = Number(quantity);
+    let targetRackId = rackId ? Number(rackId) : null;
+
     await db.transaction(async (tx) => {
-      // Find existing inventory
-      const existingInventory = await tx.orm.public.Inventory.first({
+      // Find existing inventory - if rackId provided match specific rack, else match productId & warehouseId
+      const invQuery = {
         productId: Number(productId),
         warehouseId: Number(warehouseId),
-        rackId: rackId ? Number(rackId) : null,
-      });
+      };
+      if (rackId) {
+        invQuery.rackId = Number(rackId);
+      }
+      const existingInventory = await tx.orm.public.Inventory.first(invQuery);
       
       if (existingInventory) {
         finalInventoryQuantity = existingInventory.quantity + Number(quantity);
+        targetRackId = existingInventory.rackId || targetRackId;
         // Update existing inventory
         await tx.orm.public.Inventory
           .where({ id: existingInventory.id })
@@ -145,11 +140,15 @@ export const stockIn = async (req, res) => {
           });
       } else {
         finalInventoryQuantity = Number(quantity);
+        if (!targetRackId) {
+          const defaultRack = await tx.orm.public.Rack.first({ warehouseId: Number(warehouseId) });
+          if (defaultRack) targetRackId = defaultRack.id;
+        }
         // Create new inventory record
         await tx.orm.public.Inventory.create({
           productId: Number(productId),
           warehouseId: Number(warehouseId),
-          rackId: rackId ? Number(rackId) : null,
+          rackId: targetRackId,
           quantity: finalInventoryQuantity,
         });
       }
@@ -158,7 +157,7 @@ export const stockIn = async (req, res) => {
       await tx.orm.public.StockMovement.create({
         productId: Number(productId),
         warehouseId: Number(warehouseId),
-        rackId: rackId ? Number(rackId) : null,
+        rackId: targetRackId,
         quantity: Number(quantity),
         type: "IN",
         referenceNumber: referenceNumber || null,
@@ -178,6 +177,7 @@ export const stockIn = async (req, res) => {
       productId: Number(productId),
       warehouseId: Number(warehouseId),
       quantity: Number(quantity),
+      newQuantity: finalInventoryQuantity,
     });
   } catch (error) {
     console.error("Stock in error:", error);
@@ -200,7 +200,7 @@ export const stockOut = async (req, res) => {
       });
     }
     
-    if (quantity <= 0) {
+    if (Number(quantity) <= 0) {
       return res.status(400).json({
         message: "Quantity must be greater than zero",
       });
@@ -227,11 +227,14 @@ export const stockOut = async (req, res) => {
     }
     
     // Find inventory
-    const inventory = await db.orm.public.Inventory.first({
+    const invQuery = {
       productId: Number(productId),
       warehouseId: Number(warehouseId),
-      rackId: rackId ? Number(rackId) : null,
-    });
+    };
+    if (rackId) {
+      invQuery.rackId = Number(rackId);
+    }
+    const inventory = await db.orm.public.Inventory.first(invQuery);
     
     if (!inventory) {
       return res.status(404).json({
@@ -263,7 +266,7 @@ export const stockOut = async (req, res) => {
       await tx.orm.public.StockMovement.create({
         productId: Number(productId),
         warehouseId: Number(warehouseId),
-        rackId: rackId ? Number(rackId) : null,
+        rackId: inventory.rackId || (rackId ? Number(rackId) : null),
         quantity: Number(quantity),
         type: "OUT",
         referenceNumber: referenceNumber || null,
@@ -283,7 +286,7 @@ export const stockOut = async (req, res) => {
       productId: Number(productId),
       warehouseId: Number(warehouseId),
       quantity: Number(quantity),
-      remainingStock: inventory.quantity - Number(quantity),
+      remainingStock: remainingQuantity,
     });
   } catch (error) {
     console.error("Stock out error:", error);
@@ -306,16 +309,21 @@ export const transfer = async (req, res) => {
       quantity,
       referenceNumber,
       notes,
+      fromWarehouseId,
+      toWarehouseId,
     } = req.body;
+
+    const fromWhId = sourceWarehouseId || fromWarehouseId;
+    const toWhId = destinationWarehouseId || toWarehouseId;
     
     // Validation
-    if (!productId || !sourceWarehouseId || !destinationWarehouseId || !quantity) {
+    if (!productId || !fromWhId || !toWhId || !quantity) {
       return res.status(400).json({
         message: "productId, sourceWarehouseId, destinationWarehouseId, and quantity are required",
       });
     }
     
-    if (quantity <= 0) {
+    if (Number(quantity) <= 0) {
       return res.status(400).json({
         message: "Quantity must be greater than zero",
       });
@@ -323,7 +331,7 @@ export const transfer = async (req, res) => {
     
     // Check if source and destination are the same
     if (
-      Number(sourceWarehouseId) === Number(destinationWarehouseId) &&
+      Number(fromWhId) === Number(toWhId) &&
       (sourceRackId === destinationRackId || (!sourceRackId && !destinationRackId))
     ) {
       return res.status(400).json({
@@ -343,7 +351,7 @@ export const transfer = async (req, res) => {
     
     // Verify source warehouse exists
     const sourceWarehouse = await db.orm.public.Warehouse.first({
-      id: Number(sourceWarehouseId),
+      id: Number(fromWhId),
     });
     if (!sourceWarehouse) {
       return res.status(404).json({
@@ -353,7 +361,7 @@ export const transfer = async (req, res) => {
     
     // Verify destination warehouse exists
     const destinationWarehouse = await db.orm.public.Warehouse.first({
-      id: Number(destinationWarehouseId),
+      id: Number(toWhId),
     });
     if (!destinationWarehouse) {
       return res.status(404).json({
@@ -371,7 +379,7 @@ export const transfer = async (req, res) => {
           message: "Source rack not found",
         });
       }
-      if (rack.warehouseId !== Number(sourceWarehouseId)) {
+      if (rack.warehouseId !== Number(fromWhId)) {
         return res.status(400).json({
           message: "Source rack does not belong to source warehouse",
         });
@@ -388,7 +396,7 @@ export const transfer = async (req, res) => {
           message: "Destination rack not found",
         });
       }
-      if (rack.warehouseId !== Number(destinationWarehouseId)) {
+      if (rack.warehouseId !== Number(toWhId)) {
         return res.status(400).json({
           message: "Destination rack does not belong to destination warehouse",
         });
@@ -396,15 +404,18 @@ export const transfer = async (req, res) => {
     }
     
     // Find source inventory
-    const sourceInventory = await db.orm.public.Inventory.first({
+    const sourceInvQuery = {
       productId: Number(productId),
-      warehouseId: Number(sourceWarehouseId),
-      rackId: sourceRackId ? Number(sourceRackId) : null,
-    });
+      warehouseId: Number(fromWhId),
+    };
+    if (sourceRackId) {
+      sourceInvQuery.rackId = Number(sourceRackId);
+    }
+    const sourceInventory = await db.orm.public.Inventory.first(sourceInvQuery);
     
     if (!sourceInventory) {
       return res.status(404).json({
-        message: "Source inventory not found",
+        message: "Source inventory not found for this product and warehouse",
       });
     }
     
@@ -416,6 +427,9 @@ export const transfer = async (req, res) => {
         requested: Number(quantity),
       });
     }
+
+    const sourceRemaining = sourceInventory.quantity - Number(quantity);
+    let destFinal = Number(quantity);
     
     // Execute transaction
     await db.transaction(async (tx) => {
@@ -423,77 +437,89 @@ export const transfer = async (req, res) => {
       await tx.orm.public.Inventory
         .where({ id: sourceInventory.id })
         .update({
-          quantity: sourceInventory.quantity - Number(quantity),
+          quantity: sourceRemaining,
         });
       
       // Find or create destination inventory
-      const destInventory = await tx.orm.public.Inventory.first({
+      const destInvQuery = {
         productId: Number(productId),
-        warehouseId: Number(destinationWarehouseId),
-        rackId: destinationRackId ? Number(destinationRackId) : null,
-      });
+        warehouseId: Number(toWhId),
+      };
+      if (destinationRackId) {
+        destInvQuery.rackId = Number(destinationRackId);
+      }
+      const destInventory = await tx.orm.public.Inventory.first(destInvQuery);
+
+      let targetDestRackId = destinationRackId ? Number(destinationRackId) : null;
       
       if (destInventory) {
+        destFinal = destInventory.quantity + Number(quantity);
+        targetDestRackId = destInventory.rackId || targetDestRackId;
         // Update existing destination inventory
         await tx.orm.public.Inventory
           .where({ id: destInventory.id })
           .update({
-            quantity: destInventory.quantity + Number(quantity),
+            quantity: destFinal,
           });
       } else {
+        destFinal = Number(quantity);
+        if (!targetDestRackId) {
+          const defaultRack = await tx.orm.public.Rack.first({ warehouseId: Number(toWhId) });
+          if (defaultRack) targetDestRackId = defaultRack.id;
+        }
         // Create new destination inventory
         await tx.orm.public.Inventory.create({
           productId: Number(productId),
-          warehouseId: Number(destinationWarehouseId),
-          rackId: destinationRackId ? Number(destinationRackId) : null,
-          quantity: Number(quantity),
+          warehouseId: Number(toWhId),
+          rackId: targetDestRackId,
+          quantity: destFinal,
         });
       }
       
       // Create stock movement record for source (OUT)
       await tx.orm.public.StockMovement.create({
         productId: Number(productId),
-        warehouseId: Number(sourceWarehouseId),
-        rackId: sourceRackId ? Number(sourceRackId) : null,
+        warehouseId: Number(fromWhId),
+        rackId: sourceInventory.rackId || (sourceRackId ? Number(sourceRackId) : null),
         quantity: Number(quantity),
         type: "TRANSFER_OUT",
         referenceNumber: referenceNumber || null,
-        notes: notes ? `Transfer to warehouse ${destinationWarehouseId}: ${notes}` : `Transfer to warehouse ${destinationWarehouseId}`,
+        notes: notes ? `Transfer to warehouse ${toWhId}: ${notes}` : `Transfer to warehouse ${toWhId}`,
         performedBy: req.user?.userId || null,
       });
       
       // Create stock movement record for destination (IN)
       await tx.orm.public.StockMovement.create({
         productId: Number(productId),
-        warehouseId: Number(destinationWarehouseId),
-        rackId: destinationRackId ? Number(destinationRackId) : null,
+        warehouseId: Number(toWhId),
+        rackId: targetDestRackId,
         quantity: Number(quantity),
         type: "TRANSFER_IN",
         referenceNumber: referenceNumber || null,
-        notes: notes ? `Transfer from warehouse ${sourceWarehouseId}: ${notes}` : `Transfer from warehouse ${sourceWarehouseId}`,
+        notes: notes ? `Transfer from warehouse ${fromWhId}: ${notes}` : `Transfer from warehouse ${fromWhId}`,
         performedBy: req.user?.userId || null,
       });
     });
 
-    try {
-      await notifyInventoryThreshold({
-        productId: Number(productId),
-        warehouseId: Number(sourceWarehouseId),
-      });
-      await notifyInventoryThreshold({
-        productId: Number(productId),
-        warehouseId: Number(destinationWarehouseId),
-      });
-    } catch (notifyErr) {
-      console.warn("Transfer notification error:", notifyErr.message);
-    }
+    await notifyInventoryThreshold({
+      productId,
+      warehouseId: fromWhId,
+      quantity: sourceRemaining,
+    });
+    await notifyInventoryThreshold({
+      productId,
+      warehouseId: toWhId,
+      quantity: destFinal,
+    });
     
     res.status(200).json({
       message: "Transfer completed successfully",
       productId: Number(productId),
-      sourceWarehouseId: Number(sourceWarehouseId),
-      destinationWarehouseId: Number(destinationWarehouseId),
+      sourceWarehouseId: Number(fromWhId),
+      destinationWarehouseId: Number(toWhId),
       quantity: Number(quantity),
+      sourceRemaining,
+      destinationTotal: destFinal,
     });
   } catch (error) {
     console.error("Transfer error:", error);
@@ -510,19 +536,19 @@ export const adjustment = async (req, res) => {
     const { productId, warehouseId, rackId, newQuantity, reason } = req.body;
     
     // Validation
-    if (!productId || !warehouseId || newQuantity === undefined) {
+    if (!productId || !warehouseId || newQuantity === undefined || newQuantity === null || newQuantity === '') {
       return res.status(400).json({
         message: "productId, warehouseId, and newQuantity are required",
       });
     }
     
-    if (newQuantity < 0) {
+    if (Number(newQuantity) < 0) {
       return res.status(400).json({
         message: "New quantity cannot be negative",
       });
     }
     
-    if (!reason) {
+    if (!reason || !reason.trim()) {
       return res.status(400).json({
         message: "Reason is required for inventory adjustment",
       });
@@ -566,59 +592,77 @@ export const adjustment = async (req, res) => {
     }
     
     // Find existing inventory
-    const inventory = await db.orm.public.Inventory.first({
+    const invQuery = {
       productId: Number(productId),
       warehouseId: Number(warehouseId),
-      rackId: rackId ? Number(rackId) : null,
-    });
-    
-    if (!inventory) {
-      return res.status(404).json({
-        message: "Inventory not found for this product and warehouse",
-      });
+    };
+    if (rackId) {
+      invQuery.rackId = Number(rackId);
     }
+    const inventory = await db.orm.public.Inventory.first(invQuery);
     
-    const oldQuantity = inventory.quantity;
-    const adjustmentQuantity = Number(newQuantity) - oldQuantity;
+    let targetRackId = rackId ? Number(rackId) : null;
+    let oldQuantity = 0;
+    const targetQuantity = Number(newQuantity);
+    let adjustmentQuantity = targetQuantity;
+
+    if (inventory) {
+      oldQuantity = inventory.quantity;
+      adjustmentQuantity = targetQuantity - oldQuantity;
+      targetRackId = inventory.rackId || targetRackId;
+    } else {
+      if (!targetRackId) {
+        const defaultRack = await db.orm.public.Rack.first({ warehouseId: Number(warehouseId) });
+        if (defaultRack) targetRackId = defaultRack.id;
+      }
+    }
     
     // Execute transaction
     await db.transaction(async (tx) => {
-      // Update inventory to new quantity
-      await tx.orm.public.Inventory
-        .where({ id: inventory.id })
-        .update({
-          quantity: Number(newQuantity),
+      if (inventory) {
+        // Update inventory to new quantity
+        await tx.orm.public.Inventory
+          .where({ id: inventory.id })
+          .update({
+            quantity: targetQuantity,
+          });
+      } else {
+        // Create inventory
+        await tx.orm.public.Inventory.create({
+          productId: Number(productId),
+          warehouseId: Number(warehouseId),
+          rackId: targetRackId,
+          quantity: targetQuantity,
         });
+      }
       
       // Create stock movement record
       await tx.orm.public.StockMovement.create({
         productId: Number(productId),
         warehouseId: Number(warehouseId),
-        rackId: rackId ? Number(rackId) : null,
+        rackId: targetRackId,
         quantity: Math.abs(adjustmentQuantity),
         type: "ADJUSTMENT",
         referenceNumber: null,
-        notes: `Adjustment: ${oldQuantity} → ${newQuantity}. Reason: ${reason}`,
+        notes: inventory 
+          ? `Adjustment: ${oldQuantity} → ${targetQuantity}. Reason: ${reason}`
+          : `Initial adjustment: 0 → ${targetQuantity}. Reason: ${reason}`,
         performedBy: req.user?.userId || null,
       });
     });
 
-    try {
-      await notifyInventoryThreshold({
-        productId: Number(productId),
-        warehouseId: Number(warehouseId),
-        quantity: Number(newQuantity),
-      });
-    } catch (notifyErr) {
-      console.warn("Adjustment notification error:", notifyErr.message);
-    }
+    await notifyInventoryThreshold({
+      productId,
+      warehouseId,
+      quantity: targetQuantity,
+    });
     
     res.status(200).json({
       message: "Inventory adjustment completed successfully",
       productId: Number(productId),
       warehouseId: Number(warehouseId),
       oldQuantity,
-      newQuantity: Number(newQuantity),
+      newQuantity: targetQuantity,
       adjustment: adjustmentQuantity,
     });
   } catch (error) {
@@ -700,112 +744,38 @@ export const getLowStock = async (req, res) => {
 
 export const getInventories = async (req, res) => {
   try {
-    // Get all inventory records
     const inventories = await db.orm.public.Inventory.all();
-
-    // Get all products
-    const products = await db.orm.public.Product.all();
-
-    // Create product map
-    const productMap = {};
-
-    products.forEach(product => {
-      productMap[product.id] = product;
-    });
-
-    // Enrich inventory data
-    const enrichedInventories = await Promise.all(
-      inventories.map(async inv => {
-        const product = productMap[inv.productId];
-
-        // Get warehouse
-        const warehouse =
-          await db.orm.public.Warehouse.first({
-            id: inv.warehouseId,
-          });
-
-        // Get rack if available
-        let rack = null;
-
-        if (inv.rackId) {
-          rack = await db.orm.public.Rack.first({
-            id: inv.rackId,
-          });
-        }
-
-        return {
-          id: inv.id,
-          productId: inv.productId,
-          warehouseId: inv.warehouseId,
-          rackId: inv.rackId,
-          quantity: inv.quantity,
-
-          product: product
-            ? {
-                id: product.id,
-                name: product.name,
-                sku: product.sku,
-                reorderLevel: product.reorderLevel,
-                safetyStock: product.safetyStock,
-              }
-            : null,
-
-          warehouse: warehouse
-            ? {
-                id: warehouse.id,
-                name: warehouse.name,
-              }
-            : null,
-
-          rack: rack
-            ? {
-                id: rack.id,
-                name: rack.name,
-              }
-            : null,
-        };
-      }),
-    );
-
-    res.status(200).json({
-      message: 'Inventory fetched successfully',
-      inventories: enrichedInventories,
+    res.json({
+      message: "Inventory fetched successfully",
+      inventories,
     });
   } catch (error) {
-    console.error('Get inventories error:', error);
-
+    console.error(error);
     res.status(500).json({
-      message: 'Failed to fetch inventory',
-      error: error.message,
+      message: "Failed to fetch inventory",
     });
   }
 };
 
 export const getInventory = async (req, res) => {
   try {
-    const {id} = req.params;
-
-    const inventory =
-      await db.orm.public.Inventory.first({
-        id: Number(id),
-      });
-
+    const { id } = req.params;
+    const inventory = await db.orm.public.Inventory.first({
+      id: Number(id),
+    });
     if (!inventory) {
       return res.status(404).json({
-        message: 'Inventory not found',
+        message: "Inventory not found",
       });
     }
-
     res.json({
-      message: 'Inventory fetched successfully',
+      message: "Inventory fetched successfully",
       inventory,
     });
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
-      message: 'Failed to fetch inventory',
-      error: error.message,
+      message: "Failed to fetch inventory",
     });
   }
 };
@@ -830,17 +800,6 @@ export const updateInventory = async (req, res) => {
         rackId: rackId ? Number(rackId) : null,
         quantity,
       });
-
-    try {
-      await notifyInventoryThreshold({
-        productId: Number(productId || existingInventory.productId),
-        warehouseId: Number(warehouseId || existingInventory.warehouseId),
-        quantity: quantity !== undefined ? Number(quantity) : undefined,
-      });
-    } catch (notifyErr) {
-      console.warn("Update inventory notification error:", notifyErr.message);
-    }
-
     res.json({
       message: "Inventory updated successfully",
       inventory,
